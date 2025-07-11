@@ -9,14 +9,13 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
     <style>
         body { font-family: sans-serif; margin: 0; overflow: hidden; background-color: #222; }
-        
-        /* ▼▼▼ 追加：メインコンテンツのコンテナ ▼▼▼ */
+
         #main-content {
             width: 100%;
             height: 100%;
-            display: none; /* 初期状態は非表示 */
+            display: none;
         }
-        
+
         #canvas-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
         #face-recognition-output {
             position: absolute;
@@ -69,7 +68,6 @@
         }
         #camera-view { display: none; }
 
-        /* ▼▼▼ 追加：画面切り替え関連のCSS ▼▼▼ */
         #switch-to-white-button {
             position: fixed;
             bottom: 20px;
@@ -87,17 +85,28 @@
             width: 100vw;
             height: 100vh;
             background-color: white;
-            z-index: 30; /* 最前面に表示 */
-            display: none; /* 初期状態は非表示 */
-            justify-content: center;
+            z-index: 30;
+            display: none;
+            flex-direction: column;
             align-items: center;
+            justify-content: center;
         }
         #switch-to-main-button {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            transform: none;
             padding: 15px 30px;
             font-size: 20px;
             cursor: pointer;
         }
-        /* ▲▲▲ 追加ここまで ▲▲▲ */
+        #red-dot {
+            width: 50px;
+            height: 50px;
+            background-color: red;
+            border-radius: 50%;
+            z-index: 31;
+        }
     </style>
 </head>
 <body>
@@ -120,9 +129,10 @@
     <p id="status" style="color: white; position: fixed; bottom: 10px; left: 10px; z-index: 20;"></p>
 
     <div id="white-screen">
+        <div id="red-dot"></div>
         <button id="switch-to-main-button">元の画面に戻る</button>
     </div>
-    
+
     <script>
         const startButton = document.getElementById('start-button');
         const statusEl = document.getElementById('status');
@@ -135,7 +145,6 @@
         const outputCanvas = document.getElementById('face-recognition-output');
         const outputCtx = outputCanvas.getContext('2d');
 
-        // ▼▼▼ 追加：画面切り替え用の要素を取得 ▼▼▼
         const mainContent = document.getElementById('main-content');
         const whiteScreen = document.getElementById('white-screen');
         const switchToWhiteButton = document.getElementById('switch-to-white-button');
@@ -174,7 +183,7 @@
             faceMesh.onResults(onFaceMeshResults);
             await faceMesh.initialize();
         }
-        
+
         function onFaceMeshResults(results) {
             outputCtx.save();
             outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
@@ -189,7 +198,7 @@
             }
             outputCtx.restore();
         }
-        
+
         function animate() {
             renderer.render(scene, camera);
             requestAnimationFrame(animate);
@@ -227,7 +236,7 @@
                 initialGamma = gamma;
             }
         }
-        
+
         function setupResetButton() {
             resetButton.addEventListener('mousedown', () => { isHoldingButton = true; });
             resetButton.addEventListener('mouseup', () => { isHoldingButton = false; sphere.rotation.set(0, 0, 0); });
@@ -236,11 +245,10 @@
             resetButton.addEventListener('touchcancel', () => { resetButton.dispatchEvent(new Event('mouseup')); });
         }
 
-        // ▼▼▼ 追加：画面切り替えボタンのイベントリスナーを設定する関数 ▼▼▼
         function setupSwitchButtons() {
             switchToWhiteButton.addEventListener('click', () => {
                 mainContent.style.display = 'none';
-                whiteScreen.style.display = 'flex'; // 中央寄せのためflex
+                whiteScreen.style.display = 'flex';
             });
 
             switchToMainButton.addEventListener('click', () => {
@@ -248,7 +256,7 @@
                 mainContent.style.display = 'block';
             });
         }
-        
+
         function requestSensorPermission() {
             return new Promise((resolve, reject) => {
                 if (typeof DeviceOrientationEvent.requestPermission !== 'function') {
@@ -265,7 +273,7 @@
                 }).catch(err => reject(err));
             });
         }
-        
+
         function startCamera() {
             return new Promise((resolve, reject) => {
                 navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
@@ -280,7 +288,7 @@
                     }).catch(err => reject(err));
             });
         }
-        
+
         window.addEventListener('resize', () => {
             if (camera && renderer) {
                 camera.aspect = window.innerWidth / window.innerHeight;
@@ -294,23 +302,21 @@
                 startButton.style.display = 'none';
                 statusEl.textContent = 'センサー許可をリクエスト中...';
                 await requestSensorPermission();
-                
+
                 statusEl.textContent = '3Dシーン準備中...';
                 initThreeJS();
-                
+
                 statusEl.textContent = '顔認識モデル準備中...';
                 await initializeFaceMesh();
-                
+
                 statusEl.textContent = 'カメラ準備中...';
                 await startCamera();
-                
+
                 statusEl.style.display = 'none';
-                
-                // ▼▼▼ 変更：main-contentを表示する ▼▼▼
                 mainContent.style.display = 'block';
-                
+
                 setupResetButton();
-                setupSwitchButtons(); // ← 追加：切り替えボタンの有効化
+                setupSwitchButtons();
                 animate();
                 processFace();
 
