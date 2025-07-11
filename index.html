@@ -199,8 +199,9 @@
         let isHoldingButton = false;
         let initialAlpha = 0, initialBeta = 0, initialGamma = 0;
         
-        let orientationSensor = null;
-        let initialQuaternion = null;
+        let isGyroDotActive = false;
+        let initialDotAlpha = 0, initialDotBeta = 0;
+
 
         function initThreeJS() {
             scene = new THREE.Scene();
@@ -278,6 +279,38 @@
                 initialBeta = beta;
                 initialGamma = gamma;
             }
+
+            if (isGyroDotActive) {
+                let deltaAlpha = alpha - initialDotAlpha;
+                if (deltaAlpha > 180) deltaAlpha -= 360;
+                else if (deltaAlpha < -180) deltaAlpha += 360;
+
+                let deltaBeta = beta - initialDotBeta;
+
+                let moveX = 0;
+                let moveY = 0;
+                const sensitivityAlpha = 5; 
+                const sensitivityBeta = 10;
+                
+                // ▼▼▼ 回転と傾きのうち、動きの大きい方だけを適用 ▼▼▼
+                if (Math.abs(deltaAlpha) > Math.abs(deltaBeta)) {
+                    moveX = deltaAlpha * sensitivityAlpha;
+                } else {
+                    moveY = -deltaBeta * sensitivityBeta;
+                }
+
+                const dotRadius = redDot.offsetWidth / 2;
+                const baseX = redDot.offsetLeft;
+                const baseY = redDot.offsetTop;
+                const minMoveX = dotRadius - baseX;
+                const maxMoveX = window.innerWidth - dotRadius - baseX;
+                const minMoveY = dotRadius - baseY;
+                const maxMoveY = window.innerHeight - dotRadius - baseY;
+                moveX = Math.max(minMoveX, Math.min(maxMoveX, moveX));
+                moveY = Math.max(minMoveY, Math.min(maxMoveY, moveY));
+
+                redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
+            }
         }
 
         function setupResetButton() {
@@ -301,72 +334,24 @@
             });
         }
         
-        // ▼▼▼ 赤点制御をAbsoluteOrientationSensorベースの最終版に更新 ▼▼▼
-        function setupAdvancedGyroButton() {
-            const handleReading = () => {
-                if (!orientationSensor || !orientationSensor.quaternion) return;
-
-                if (!initialQuaternion) {
-                    if (orientationSensor.quaternion) {
-                        initialQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
-                    }
-                    return;
-                }
-                
-                const currentQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
-                const relativeQuaternion = initialQuaternion.clone().invert().multiply(currentQuaternion);
-                const pointerVector = new THREE.Vector3(0, 0, -1);
-                pointerVector.applyQuaternion(relativeQuaternion);
-                
-                const sensitivity = 800;
-                let moveX = pointerVector.x * sensitivity;
-                let moveY = -pointerVector.y * sensitivity;
-
-                const dotRadius = redDot.offsetWidth / 2;
-                const baseX = redDot.offsetLeft;
-                const baseY = redDot.offsetTop;
-                const minMoveX = dotRadius - baseX;
-                const maxMoveX = window.innerWidth - dotRadius - baseX;
-                const minMoveY = dotRadius - baseY;
-                const maxMoveY = window.innerHeight - dotRadius - baseY;
-                moveX = Math.max(minMoveX, Math.min(maxMoveX, moveX));
-                moveY = Math.max(minMoveY, Math.min(maxMoveY, moveY));
-
-                redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
-            };
-
+        function setupGyroButton() {
             const startGyro = (e) => {
                 e.preventDefault();
                 redDot.style.backgroundColor = 'limegreen';
-                if (!window.AbsoluteOrientationSensor) {
-                    statusEl.textContent = '高機能センサーは利用できません。';
-                    redDot.style.backgroundColor = 'red';
-                    return;
-                }
+                isGyroDotActive = true;
                 
-                initialQuaternion = null;
-
-                try {
-                    if (!orientationSensor) {
-                        orientationSensor = new AbsoluteOrientationSensor({ frequency: 60 });
-                        orientationSensor.addEventListener('reading', handleReading);
-                        orientationSensor.addEventListener('error', (e) => {
-                            statusEl.textContent = `センサーエラー: ${e.error.name}`;
-                            redDot.style.backgroundColor = 'red';
-                        });
-                    }
-                    orientationSensor.start();
-                } catch (error) {
-                    statusEl.textContent = `センサーの初期化に失敗: ${error.name}`;
-                    redDot.style.backgroundColor = 'red';
-                }
+                const tempListener = (event) => {
+                    initialDotAlpha = event.alpha || 0;
+                    initialDotBeta = event.beta || 0;
+                    window.removeEventListener('deviceorientation', tempListener);
+                };
+                window.addEventListener('deviceorientation', tempListener, { once: true });
             };
 
             const endGyro = () => {
                 redDot.style.backgroundColor = 'red';
-                if (orientationSensor) {
-                    orientationSensor.stop();
-                }
+                isGyroDotActive = false;
+                redDot.style.transform = 'translate(-50%, -50%)';
             };
 
             gyroButton.addEventListener('mousedown', startGyro);
@@ -475,7 +460,7 @@
 
                 setupResetButton();
                 setupSwitchButtons();
-                setupAdvancedGyroButton();
+                setupGyroButton();
                 setupRandomMoveButton();
 
                 animate();
