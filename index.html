@@ -107,7 +107,7 @@
             top: 40%;
             left: 50%;
             transform: translate(-50%, -50%);
-            transition: transform 0.05s linear; /* 動きを滑らかに */
+            transition: transform 0.05s linear;
         }
         #gyro-button {
             position: fixed;
@@ -268,8 +268,12 @@
                 const deltaBeta = beta - initialDotBeta;
                 const deltaGamma = gamma - initialDotGamma;
                 const sensitivity = 4;
-                const moveX = -deltaGamma * sensitivity;
-                const moveY = -deltaBeta * sensitivity;
+
+                // ▼▼▼ 横向き用に移動量の計算を変更 ▼▼▼
+                const moveX = deltaBeta * sensitivity;  // 左右の傾き(beta)でX軸（水平）方向の移動
+                const moveY = -deltaGamma * sensitivity; // 前後の傾き(gamma)でY軸（垂直）方向の移動
+                // ▲▲▲ 変更ここまで ▲▲▲
+
                 redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
             }
         }
