@@ -107,7 +107,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            transition: transform 0.05s linear, top 0.3s ease, left 0.3s ease;
+            transition: top 0.3s ease, left 0.3s ease; /* transformのアニメーションを削除 */
         }
         #white-screen-buttons {
             position: fixed;
@@ -204,8 +204,10 @@
         let isHoldingButton = false;
         let initialAlpha = 0, initialBeta = 0, initialGamma = 0;
 
-        let isGyroDotActive = false;
-        let initialDotBeta = 0, initialDotGamma = 0;
+        // ▼▼▼ 新しいジャイロ用の変数を定義 ▼▼▼
+        let gyroscope = null;
+        let totalAngleX = 0, totalAngleY = 0;
+        let lastTimestamp = 0;
 
         function initThreeJS() {
             scene = new THREE.Scene();
@@ -288,17 +290,7 @@
                 initialBeta = beta;
                 initialGamma = gamma;
             }
-
-            if (isGyroDotActive) {
-                const deltaBeta = beta - initialDotBeta;
-                const deltaGamma = gamma - initialDotGamma;
-                const sensitivity = 4;
-
-                const moveX = deltaBeta * sensitivity;
-                const moveY = -deltaGamma * sensitivity;
-
-                redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
-            }
+            // ▼▼▼ 赤点の制御をここから削除 ▼▼▼
         }
 
         function setupResetButton() {
@@ -320,19 +312,73 @@
             });
         }
         
-        function setupGyroButton() {
+        // ▼▼▼ 新しい高精度ジャイロボタンのセットアップ ▼▼▼
+        function setupAdvancedGyroButton() {
+            const handleGyroReading = () => {
+                if (!lastTimestamp) {
+                    lastTimestamp = gyroscope.timestamp;
+                    return;
+                }
+                const dt = (gyroscope.timestamp - lastTimestamp) / 1000; // 秒に変換
+                lastTimestamp = gyroscope.timestamp;
+
+                // ジャイロセンサーの角速度（rad/s）から角度を累積
+                // 横向き画面では、デバイスのY軸回転が画面のX軸移動、X軸回転が画面のY軸移動に対応
+                if (gyroscope.y) totalAngleY += gyroscope.y * dt;
+                if (gyroscope.x) totalAngleX += gyroscope.x * dt;
+
+                const sensitivity = 2500; // 感度（値が大きいほど大きく動く）
+                let moveX = totalAngleY * sensitivity;
+                let moveY = -totalAngleX * sensitivity;
+
+                // 画面外に出ないように移動量を制限（クランプ）
+                const dotRadius = redDot.offsetWidth / 2;
+                const baseX = redDot.offsetLeft;
+                const baseY = redDot.offsetTop;
+                
+                const minX = dotRadius - baseX;
+                const maxX = window.innerWidth - dotRadius - baseX;
+                const minY = dotRadius - baseY;
+                const maxY = window.innerHeight - dotRadius - baseY;
+
+                moveX = Math.max(minX, Math.min(maxX, moveX));
+                moveY = Math.max(minY, Math.min(maxY, moveY));
+                
+                redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
+            };
+
             const startGyro = (e) => {
                 e.preventDefault();
-                isGyroDotActive = true;
-                initialDotBeta = initialBeta;
-                initialDotGamma = initialGamma;
+                try {
+                    if (!gyroscope) {
+                         // ジャイロセンサーを初期化（60Hz）
+                        gyroscope = new Gyroscope({ frequency: 60 });
+                        gyroscope.addEventListener('error', event => {
+                            console.error('Gyroscope error:', event.error);
+                            statusEl.textContent = `ジャイロエラー: ${event.error.name}`;
+                        });
+                    }
+                    totalAngleX = 0;
+                    totalAngleY = 0;
+                    lastTimestamp = 0;
+                    gyroscope.addEventListener('reading', handleGyroReading);
+                    gyroscope.start();
+                } catch (error) {
+                    console.error('Gyroscope not supported or permission denied.', error);
+                    statusEl.textContent = '高精度ジャイロは利用できません。';
+                }
             };
+
             const endGyro = () => {
-                isGyroDotActive = false;
+                if (gyroscope) {
+                    gyroscope.stop();
+                    gyroscope.removeEventListener('reading', handleGyroReading);
+                }
                 redDot.style.transform = 'translate(-50%, -50%)';
             };
+
             gyroButton.addEventListener('mousedown', startGyro);
-            gyroButton.addEventListener('touchstart', startGyro);
+            gyroButton.addEventListener('touchstart', startGyro, { passive: false });
             gyroButton.addEventListener('mouseup', endGyro);
             gyroButton.addEventListener('touchend', endGyro);
             gyroButton.addEventListener('mouseleave', endGyro);
@@ -377,18 +423,21 @@
 
         function requestSensorPermission() {
             return new Promise((resolve, reject) => {
-                if (typeof DeviceOrientationEvent.requestPermission !== 'function') {
+                // iOS 13+ のために DeviceOrientationEvent の許可をリクエスト
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission().then(state => {
+                        if (state === 'granted') {
+                            window.addEventListener('deviceorientation', handleOrientation);
+                            resolve();
+                        } else {
+                            reject(new Error('センサーが許可されませんでした。'));
+                        }
+                    }).catch(err => reject(err));
+                } else {
+                    // Android やその他のデバイス
                     window.addEventListener('deviceorientation', handleOrientation);
-                    return resolve();
+                    resolve();
                 }
-                DeviceOrientationEvent.requestPermission().then(state => {
-                    if (state === 'granted') {
-                        window.addEventListener('deviceorientation', handleOrientation);
-                        resolve();
-                    } else {
-                        reject(new Error('センサーが許可されませんでした。'));
-                    }
-                }).catch(err => reject(err));
             });
         }
 
@@ -419,10 +468,6 @@
             try {
                 startButton.style.display = 'none';
 
-                // ▼▼▼ フルスクリーン機能を削除 ▼▼▼
-                // statusEl.textContent = 'フルスクリーンに移行中...';
-                // await document.documentElement.requestFullscreen();
-
                 statusEl.textContent = 'センサー許可をリクエスト中...';
                 await requestSensorPermission();
 
@@ -440,7 +485,7 @@
 
                 setupResetButton();
                 setupSwitchButtons();
-                setupGyroButton();
+                setupAdvancedGyroButton(); // 古い関数から新しい関数に差し替え
                 setupRandomMoveButton();
                 animate();
                 processFace();
