@@ -392,4 +392,64 @@
             });
         }
 
-        function startCamera
+        function startCamera() {
+            return new Promise((resolve, reject) => {
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+                    .then(stream => {
+                        videoElement.srcObject = stream;
+                        videoElement.play();
+                        videoElement.onplaying = () => {
+                            outputCanvas.width = videoElement.videoWidth;
+                            outputCanvas.height = videoElement.videoHeight;
+                            resolve();
+                        };
+                    }).catch(err => reject(err));
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            if (camera && renderer) {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        });
+
+        startButton.addEventListener('click', async () => {
+            try {
+                startButton.style.display = 'none';
+
+                // ▼▼▼ フルスクリーン機能を削除 ▼▼▼
+                // statusEl.textContent = 'フルスクリーンに移行中...';
+                // await document.documentElement.requestFullscreen();
+
+                statusEl.textContent = 'センサー許可をリクエスト中...';
+                await requestSensorPermission();
+
+                statusEl.textContent = '3Dシーン準備中...';
+                initThreeJS();
+
+                statusEl.textContent = '顔認識モデル準備中...';
+                await initializeFaceMesh();
+
+                statusEl.textContent = 'カメラ準備中...';
+                await startCamera();
+
+                statusEl.style.display = 'none';
+                mainContent.style.display = 'block';
+
+                setupResetButton();
+                setupSwitchButtons();
+                setupGyroButton();
+                setupRandomMoveButton();
+                animate();
+                processFace();
+
+            } catch(e) {
+                console.error(e);
+                statusEl.textContent = `エラー: ${e.message}。ページを再読み込みしてください。`;
+            }
+        });
+    </script>
+</body>
+</html>
