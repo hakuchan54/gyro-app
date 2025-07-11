@@ -87,9 +87,7 @@
             background-color: white;
             z-index: 30;
             display: none;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
+            /* 内部の要素の位置決めに影響するためflex関連は削除 */
         }
         #switch-to-main-button {
             position: fixed;
@@ -101,11 +99,17 @@
             cursor: pointer;
         }
         #red-dot {
-            width: 50px;
-            height: 50px;
+            /* サイズを約1/3に変更 */
+            width: 17px;
+            height: 17px;
             background-color: red;
             border-radius: 50%;
             z-index: 31;
+            /* 位置を画面の上から40%の位置に固定 */
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
         }
     </style>
 </head>
@@ -248,7 +252,7 @@
         function setupSwitchButtons() {
             switchToWhiteButton.addEventListener('click', () => {
                 mainContent.style.display = 'none';
-                whiteScreen.style.display = 'flex';
+                whiteScreen.style.display = 'block'; // flexからblockに変更
             });
 
             switchToMainButton.addEventListener('click', () => {
