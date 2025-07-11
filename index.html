@@ -419,9 +419,8 @@
             try {
                 startButton.style.display = 'none';
 
-                // ▼▼▼ 横向き固定の処理を削除 ▼▼▼
-                // statusEl.textContent = '画面を横向きに固定中...';
-                // await screen.orientation.lock('landscape'); 
+                statusEl.textContent = 'フルスクリーンに移行中...';
+                await document.documentElement.requestFullscreen();
 
                 statusEl.textContent = 'センサー許可をリクエスト中...';
                 await requestSensorPermission();
