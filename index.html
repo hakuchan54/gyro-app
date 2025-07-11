@@ -159,6 +159,10 @@
             <p>Alpha(z):<span id="alpha-val">--</span></p>
             <p>Beta(x):<span id="beta-val">--</span></p>
             <p>Gamma(y):<span id="gamma-val">--</span></p>
+            <hr>
+            <p>Gyro(x):<span id="gyro-x-val">--</span></p>
+            <p>Gyro(y):<span id="gyro-y-val">--</span></p>
+            <p>dt:<span id="dt-val">--</span></p>
         </div>
         <div id="reset-button-container">
             <button id="reset-button">正面<br>リセット</button>
@@ -190,6 +194,12 @@
         const canvasContainer = document.getElementById('canvas-container');
         const outputCanvas = document.getElementById('face-recognition-output');
         const outputCtx = outputCanvas.getContext('2d');
+
+        // ▼▼▼ デバッグ表示用の要素を取得 ▼▼▼
+        const gyroXVal = document.getElementById('gyro-x-val');
+        const gyroYVal = document.getElementById('gyro-y-val');
+        const dtVal = document.getElementById('dt-val');
+
 
         const mainContent = document.getElementById('main-content');
         const whiteScreen = document.getElementById('white-screen');
@@ -313,7 +323,6 @@
             const handleGyroReading = () => {
                 if (!gyroscope || !gyroscope.timestamp) return;
 
-                // 最初のフレームでは lastTimestamp を設定するだけ
                 if (lastTimestamp === 0) {
                     lastTimestamp = gyroscope.timestamp;
                     return;
@@ -324,11 +333,16 @@
 
                 const wx = gyroscope.x || 0;
                 const wy = gyroscope.y || 0;
+                
+                // ▼▼▼ デバッグ表示を更新 ▼▼▼
+                gyroXVal.textContent = wx.toFixed(3);
+                gyroYVal.textContent = wy.toFixed(3);
+                dtVal.textContent = dt.toFixed(4);
 
                 totalAngleX += wx * dt;
                 totalAngleY += wy * dt;
 
-                const sensitivity = 3000; // 感度を少し上げました
+                const sensitivity = 3000;
                 let moveX = totalAngleY * sensitivity;
                 let moveY = -totalAngleX * sensitivity;
 
@@ -349,7 +363,7 @@
 
             const startGyro = (e) => {
                 e.preventDefault();
-                redDot.style.backgroundColor = 'green'; // デバッグ用に色を変更
+                redDot.style.backgroundColor = 'limegreen';
 
                 if (!window.Gyroscope) {
                     statusEl.textContent = '高精度ジャイロは利用できません。';
@@ -357,7 +371,6 @@
                 }
 
                 try {
-                    // イベントリスナーは一度だけ登録する
                     if (!gyroscope) {
                         gyroscope = new Gyroscope({ frequency: 60 });
                         gyroscope.addEventListener('reading', handleGyroReading);
@@ -371,10 +384,9 @@
                         });
                     }
                     
-                    // 状態をリセット
                     totalAngleX = 0;
                     totalAngleY = 0;
-                    lastTimestamp = 0; // 毎回リセットすることで、押し直した時に位置がリセットされる
+                    lastTimestamp = 0; 
                     
                     gyroscope.start();
                 } catch (error) {
@@ -384,11 +396,10 @@
             };
 
             const endGyro = () => {
-                redDot.style.backgroundColor = 'red'; // 色を元に戻す
+                redDot.style.backgroundColor = 'red';
                 if (gyroscope) {
                     gyroscope.stop();
                 }
-                // ボタンを離した時に中心に戻す
                 redDot.style.transform = 'translate(-50%, -50%)';
             };
 
