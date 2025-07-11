@@ -104,31 +104,51 @@
             border-radius: 50%;
             z-index: 31;
             position: absolute;
-            top: 40%;
+            top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            transition: transform 0.05s linear;
+            transition: transform 0.05s linear, top 0.3s ease, left 0.3s ease;
         }
-        #gyro-button {
+        #white-screen-buttons {
             position: fixed;
             right: 20px;
             top: 50%;
             transform: translateY(-50%);
+            z-index: 32;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+        #gyro-button, #random-move-button {
             width: 80px;
             height: 80px;
             border-radius: 50%;
-            background-color: rgba(255, 82, 82, 0.8);
             border: 2px solid white;
             color: white;
             font-size: 14px;
             line-height: 1.2;
-            z-index: 32;
             -webkit-user-select: none;
             user-select: none;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        #gyro-button {
+            background-color: rgba(255, 82, 82, 0.8);
         }
         #gyro-button:active {
             background-color: rgba(255, 82, 82, 0.4);
         }
+        #random-move-button {
+            background-color: rgba(76, 217, 100, 0.8);
+        }
+        #random-move-button:active {
+            background-color: rgba(76, 217, 100, 0.4);
+        }
+
     </style>
 </head>
 <body>
@@ -153,7 +173,10 @@
     <div id="white-screen">
         <div id="red-dot"></div>
         <button id="switch-to-main-button">元の画面に戻る</button>
-        <button id="gyro-button">ジャイロ<br>固定</button>
+        <div id="white-screen-buttons">
+            <button id="gyro-button">ジャイロ<br>固定</button>
+            <button id="random-move-button">ランダム<br>移動</button>
+        </div>
     </div>
 
     <script>
@@ -174,6 +197,8 @@
         const switchToMainButton = document.getElementById('switch-to-main-button');
         const gyroButton = document.getElementById('gyro-button');
         const redDot = document.getElementById('red-dot');
+        const randomMoveButton = document.getElementById('random-move-button');
+
 
         let scene, camera, renderer, sphere, faceMesh;
         let isHoldingButton = false;
@@ -269,10 +294,8 @@
                 const deltaGamma = gamma - initialDotGamma;
                 const sensitivity = 4;
 
-                // ▼▼▼ 横向き用に移動量の計算を変更 ▼▼▼
-                const moveX = deltaBeta * sensitivity;  // 左右の傾き(beta)でX軸（水平）方向の移動
-                const moveY = -deltaGamma * sensitivity; // 前後の傾き(gamma)でY軸（垂直）方向の移動
-                // ▲▲▲ 変更ここまで ▲▲▲
+                const moveX = deltaBeta * sensitivity;
+                const moveY = -deltaGamma * sensitivity;
 
                 redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
             }
@@ -315,6 +338,42 @@
             gyroButton.addEventListener('mouseleave', endGyro);
             gyroButton.addEventListener('touchcancel', endGyro);
         }
+
+        function setupRandomMoveButton() {
+            let pxPerCm = 0;
+            function getPxPerCm() {
+                if (pxPerCm > 0) return pxPerCm;
+                const div = document.createElement('div');
+                div.style.position = 'absolute';
+                div.style.width = '1cm';
+                document.body.appendChild(div);
+                pxPerCm = div.offsetWidth;
+                document.body.removeChild(div);
+                return pxPerCm;
+            }
+
+            randomMoveButton.addEventListener('click', () => {
+                const minDistancePx = 3 * getPxPerCm();
+                const rect = redDot.getBoundingClientRect();
+                const currentX = rect.left + rect.width / 2;
+                const currentY = rect.top + rect.height / 2;
+                
+                const margin = 20;
+                let newX, newY, distance;
+
+                let attempts = 0;
+                do {
+                    newX = Math.random() * (window.innerWidth - margin * 2) + margin;
+                    newY = Math.random() * (window.innerHeight - margin * 2) + margin;
+                    distance = Math.sqrt(Math.pow(newX - currentX, 2) + Math.pow(newY - currentY, 2));
+                    attempts++;
+                } while (distance < minDistancePx && attempts < 100);
+
+                redDot.style.left = newX + 'px';
+                redDot.style.top = newY + 'px';
+            });
+        }
+
 
         function requestSensorPermission() {
             return new Promise((resolve, reject) => {
@@ -360,9 +419,9 @@
             try {
                 startButton.style.display = 'none';
 
-                // 画面を横向きに固定する処理
-                statusEl.textContent = '画面を横向きに固定中...';
-                await screen.orientation.lock('landscape'); 
+                // ▼▼▼ 横向き固定の処理を削除 ▼▼▼
+                // statusEl.textContent = '画面を横向きに固定中...';
+                // await screen.orientation.lock('landscape'); 
 
                 statusEl.textContent = 'センサー許可をリクエスト中...';
                 await requestSensorPermission();
@@ -382,6 +441,7 @@
                 setupResetButton();
                 setupSwitchButtons();
                 setupGyroButton();
+                setupRandomMoveButton();
                 animate();
                 processFace();
 
