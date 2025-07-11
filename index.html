@@ -359,6 +359,11 @@
         startButton.addEventListener('click', async () => {
             try {
                 startButton.style.display = 'none';
+
+                // 画面を横向きに固定する処理
+                statusEl.textContent = '画面を横向きに固定中...';
+                await screen.orientation.lock('landscape'); 
+
                 statusEl.textContent = 'センサー許可をリクエスト中...';
                 await requestSensorPermission();
 
@@ -382,7 +387,7 @@
 
             } catch(e) {
                 console.error(e);
-                statusEl.textContent = `エラー: ${e.message}`;
+                statusEl.textContent = `エラー: ${e.message}。ページを再読み込みしてください。`;
             }
         });
     </script>
