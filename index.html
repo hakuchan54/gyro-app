@@ -3,12 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>【横向き版】3D+目認識</title>
+    <title>【横向き版】3D+目認識+画面切替</title>
     <script src="https://cdn.jsdelivr.net/npm/three@0.138.3/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
     <style>
         body { font-family: sans-serif; margin: 0; overflow: hidden; background-color: #222; }
+        
+        /* ▼▼▼ 追加：メインコンテンツのコンテナ ▼▼▼ */
+        #main-content {
+            width: 100%;
+            height: 100%;
+            display: none; /* 初期状態は非表示 */
+        }
+        
         #canvas-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
         #face-recognition-output {
             position: absolute;
@@ -30,16 +38,14 @@
             color: white;
             background: rgba(0,0,0,0.5);
             border-radius: 8px;
-            display: none; /* 初期状態では非表示 */
         }
         #info-overlay p { margin: 5px 0; font-size: 12px; }
         #reset-button-container {
             position: absolute;
             top: 50%;
-            right: 5vw; /* 画面の幅に応じて右からの位置を調整 */
+            right: 5vw;
             transform: translateY(-50%);
             z-index: 10;
-            display: none; /* 初期状態では非表示 */
         }
         #reset-button {
             width: 80px; height: 80px; background-color: rgba(0, 122, 255, 0.8);
@@ -62,22 +68,60 @@
             cursor: pointer;
         }
         #camera-view { display: none; }
+
+        /* ▼▼▼ 追加：画面切り替え関連のCSS ▼▼▼ */
+        #switch-to-white-button {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 15;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #white-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: white;
+            z-index: 30; /* 最前面に表示 */
+            display: none; /* 初期状態は非表示 */
+            justify-content: center;
+            align-items: center;
+        }
+        #switch-to-main-button {
+            padding: 15px 30px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+        /* ▲▲▲ 追加ここまで ▲▲▲ */
     </style>
 </head>
 <body>
-    <div id="canvas-container"></div>
-    <canvas id="face-recognition-output"></canvas>
-    <div id="info-overlay">
-        <p>Alpha(z):<span id="alpha-val">--</span></p>
-        <p>Beta(x):<span id="beta-val">--</span></p>
-        <p>Gamma(y):<span id="gamma-val">--</span></p>
+    <div id="main-content">
+        <div id="canvas-container"></div>
+        <canvas id="face-recognition-output"></canvas>
+        <div id="info-overlay">
+            <p>Alpha(z):<span id="alpha-val">--</span></p>
+            <p>Beta(x):<span id="beta-val">--</span></p>
+            <p>Gamma(y):<span id="gamma-val">--</span></p>
+        </div>
+        <div id="reset-button-container">
+            <button id="reset-button">正面<br>リセット</button>
+        </div>
+        <button id="switch-to-white-button">白い画面へ</button>
     </div>
-    <div id="reset-button-container">
-        <button id="reset-button">正面<br>リセット</button>
-    </div>
+
     <video id="camera-view" playsinline muted></video>
     <button id="start-button">アプリ開始</button>
     <p id="status" style="color: white; position: fixed; bottom: 10px; left: 10px; z-index: 20;"></p>
+
+    <div id="white-screen">
+        <button id="switch-to-main-button">元の画面に戻る</button>
+    </div>
     
     <script>
         const startButton = document.getElementById('start-button');
@@ -90,6 +134,12 @@
         const canvasContainer = document.getElementById('canvas-container');
         const outputCanvas = document.getElementById('face-recognition-output');
         const outputCtx = outputCanvas.getContext('2d');
+
+        // ▼▼▼ 追加：画面切り替え用の要素を取得 ▼▼▼
+        const mainContent = document.getElementById('main-content');
+        const whiteScreen = document.getElementById('white-screen');
+        const switchToWhiteButton = document.getElementById('switch-to-white-button');
+        const switchToMainButton = document.getElementById('switch-to-main-button');
 
         let scene, camera, renderer, sphere, faceMesh;
         let isHoldingButton = false;
@@ -151,11 +201,10 @@
             requestAnimationFrame(processFace);
         }
 
-        // ▼▼▼ 変更点：ジャイロの軸を横向き用に調整 ▼▼▼
         function handleOrientation(event) {
-            const alpha = event.alpha || 0; // Z軸周り（横向き時の上下方向の回転）
-            const beta = event.beta || 0;   // X軸周り（横向き時の奥行き方向の回転）
-            const gamma = event.gamma || 0; // Y軸周り（横向き時の左右方向の傾き）
+            const alpha = event.alpha || 0;
+            const beta = event.beta || 0;
+            const gamma = event.gamma || 0;
 
             alphaVal.textContent = alpha.toFixed(1);
             betaVal.textContent = beta.toFixed(1);
@@ -166,12 +215,11 @@
                 const deltaBeta = beta - initialBeta;
                 const deltaGamma = gamma - initialGamma;
 
-                // 横向きにしたときの直感的な動きに合わせる
                 sphere.rotation.set(
-                    THREE.MathUtils.degToRad(deltaBeta),  // 前後の傾きがX軸回転
-                    THREE.MathUtils.degToRad(-deltaAlpha), // 上下の回転がY軸回転（マイナスで直感的な向きに）
-                    THREE.MathUtils.degToRad(-deltaGamma), // 左右の傾きがZ軸回転
-                    'YXZ' // 回転の適用順序
+                    THREE.MathUtils.degToRad(deltaBeta),
+                    THREE.MathUtils.degToRad(-deltaAlpha),
+                    THREE.MathUtils.degToRad(-deltaGamma),
+                    'YXZ'
                 );
             } else {
                 initialAlpha = alpha;
@@ -186,6 +234,19 @@
             resetButton.addEventListener('touchstart', (e) => { e.preventDefault(); resetButton.dispatchEvent(new Event('mousedown')); });
             resetButton.addEventListener('touchend', () => { resetButton.dispatchEvent(new Event('mouseup')); });
             resetButton.addEventListener('touchcancel', () => { resetButton.dispatchEvent(new Event('mouseup')); });
+        }
+
+        // ▼▼▼ 追加：画面切り替えボタンのイベントリスナーを設定する関数 ▼▼▼
+        function setupSwitchButtons() {
+            switchToWhiteButton.addEventListener('click', () => {
+                mainContent.style.display = 'none';
+                whiteScreen.style.display = 'flex'; // 中央寄せのためflex
+            });
+
+            switchToMainButton.addEventListener('click', () => {
+                whiteScreen.style.display = 'none';
+                mainContent.style.display = 'block';
+            });
         }
         
         function requestSensorPermission() {
@@ -244,10 +305,12 @@
                 await startCamera();
                 
                 statusEl.style.display = 'none';
-                document.getElementById('info-overlay').style.display = 'block';
-                document.getElementById('reset-button-container').style.display = 'block';
+                
+                // ▼▼▼ 変更：main-contentを表示する ▼▼▼
+                mainContent.style.display = 'block';
                 
                 setupResetButton();
+                setupSwitchButtons(); // ← 追加：切り替えボタンの有効化
                 animate();
                 processFace();
 
