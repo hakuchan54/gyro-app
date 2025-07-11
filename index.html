@@ -29,6 +29,8 @@
             transform: scaleX(-1);
         }
         #info-overlay {
+            /* 機能していないため一旦非表示 */
+            display: none;
             position: fixed; 
             top: 10px;
             right: 10px;
@@ -183,13 +185,9 @@
         const statusEl = document.getElementById('status');
         const videoElement = document.getElementById('camera-view');
         const resetButton = document.getElementById('reset-button');
-        const moveXVal = document.getElementById('move-x-val');
-        const moveYVal = document.getElementById('move-y-val');
-
         const canvasContainer = document.getElementById('canvas-container');
         const outputCanvas = document.getElementById('face-recognition-output');
         const outputCtx = outputCanvas.getContext('2d');
-
         const mainContent = document.getElementById('main-content');
         const whiteScreen = document.getElementById('white-screen');
         const switchToWhiteButton = document.getElementById('switch-to-white-button');
@@ -202,8 +200,10 @@
         let isHoldingButton = false;
         let initialAlpha = 0, initialBeta = 0, initialGamma = 0;
         
-        let orientationSensor = null;
-        let initialQuaternion = null;
+        // ▼▼▼ 赤点制御用の変数を復活 ▼▼▼
+        let isGyroDotActive = false;
+        let initialDotBeta = 0, initialDotGamma = 0;
+
 
         function initThreeJS() {
             scene = new THREE.Scene();
@@ -261,17 +261,16 @@
             requestAnimationFrame(processFace);
         }
         
-        // ▼▼▼ 3D球体の回転ロジックを復活 ▼▼▼
         function handleOrientation(event) {
             const beta = event.beta || 0;
             const gamma = event.gamma || 0;
             const alpha = event.alpha || 0;
 
+            // 3D球体の制御
             if (isHoldingButton) {
                 const deltaAlpha = alpha - initialAlpha;
                 const deltaBeta = beta - initialBeta;
                 const deltaGamma = gamma - initialGamma;
-
                 sphere.rotation.set(
                     THREE.MathUtils.degToRad(deltaBeta),
                     THREE.MathUtils.degToRad(-deltaAlpha),
@@ -283,30 +282,43 @@
                 initialBeta = beta;
                 initialGamma = gamma;
             }
+
+            // 赤い点の制御
+            if (isGyroDotActive) {
+                const deltaBeta = beta - initialDotBeta;
+                const deltaGamma = gamma - initialDotGamma;
+                
+                // 感度カーブ用の調整
+                const exponent = 1.2; // 1より大きいと、大きく傾けた時に加速する
+                const sensitivity = 5;
+
+                let moveX = Math.sign(deltaGamma) * Math.pow(Math.abs(deltaGamma), exponent) * sensitivity;
+                let moveY = Math.sign(deltaBeta) * Math.pow(Math.abs(deltaBeta), exponent) * sensitivity;
+
+                // 画面外に出ないようにクランプ
+                const dotRadius = redDot.offsetWidth / 2;
+                const baseX = redDot.offsetLeft;
+                const baseY = redDot.offsetTop;
+                const minMoveX = dotRadius - baseX;
+                const maxMoveX = window.innerWidth - dotRadius - baseX;
+                const minMoveY = dotRadius - baseY;
+                const maxMoveY = window.innerHeight - dotRadius - baseY;
+                moveX = Math.max(minMoveX, Math.min(maxMoveX, moveX));
+                moveY = Math.max(minMoveY, Math.min(maxMoveY, moveY));
+
+                redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
+            }
         }
 
+        // ▼▼▼ リセットボタンのロジックをシンプルな形に戻す ▼▼▼
         function setupResetButton() {
-            const setInitialOrientation = () => {
-                isHoldingButton = true;
-                // 現在の向きを3D球の初期値としてキャプチャ
-                navigator.permissions.query({ name: 'accelerometer' }).then(() => {
-                    const tempListener = (event) => {
-                        initialBeta = event.beta || 0;
-                        initialGamma = event.gamma || 0;
-                        initialAlpha = event.alpha || 0;
-                        window.removeEventListener('deviceorientation', tempListener);
-                    };
-                    window.addEventListener('deviceorientation', tempListener);
-                });
-            };
-            resetButton.addEventListener('mousedown', setInitialOrientation);
-            resetButton.addEventListener('touchstart', (e) => { e.preventDefault(); setInitialOrientation(); });
-            
-            const clearHolding = () => { isHoldingButton = false; sphere.rotation.set(0, 0, 0); };
-            resetButton.addEventListener('mouseup', clearHolding);
-            resetButton.addEventListener('touchend', clearHolding);
-            resetButton.addEventListener('mouseleave', clearHolding);
-            resetButton.addEventListener('touchcancel', clearHolding);
+            resetButton.addEventListener('mousedown', () => { isHoldingButton = true; });
+            resetButton.addEventListener('touchstart', (e) => { e.preventDefault(); isHoldingButton = true; });
+            const endReset = () => { isHoldingButton = false; sphere.rotation.set(0, 0, 0); };
+            resetButton.addEventListener('mouseup', endReset);
+            resetButton.addEventListener('touchend', endReset);
+            resetButton.addEventListener('mouseleave', endReset);
+            resetButton.addEventListener('touchcancel', endReset);
         }
 
         function setupSwitchButtons() {
@@ -320,72 +332,26 @@
             });
         }
         
-        function setupAdvancedGyroButton() {
-            const handleReading = () => {
-                if (!orientationSensor || !orientationSensor.quaternion) return;
-
-                if (!initialQuaternion) {
-                    initialQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
-                    return;
-                }
-                
-                const currentQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
-                const relativeQuaternion = initialQuaternion.clone().invert().multiply(currentQuaternion);
-                const pointerVector = new THREE.Vector3(0, 0, -1);
-                pointerVector.applyQuaternion(relativeQuaternion);
-                
-                const sensitivity = 800;
-                let moveX = pointerVector.x * sensitivity;
-                let moveY = -pointerVector.y * sensitivity;
-
-                moveXVal.textContent = moveX.toFixed(1);
-                moveYVal.textContent = moveY.toFixed(1);
-
-                const dotRadius = redDot.offsetWidth / 2;
-                const baseX = redDot.offsetLeft;
-                const baseY = redDot.offsetTop;
-                const minMoveX = dotRadius - baseX;
-                const maxMoveX = window.innerWidth - dotRadius - baseX;
-                const minMoveY = dotRadius - baseY;
-                const maxMoveY = window.innerHeight - dotRadius - baseY;
-                moveX = Math.max(minMoveX, Math.min(maxMoveX, moveX));
-                moveY = Math.max(minMoveY, Math.min(maxMoveY, moveY));
-
-                redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
-            };
-
+        // ▼▼▼ 赤点の制御ボタンのロジックをdeviceorientationベースに戻す ▼▼▼
+        function setupGyroButton() {
             const startGyro = (e) => {
                 e.preventDefault();
-                redDot.style.backgroundColor = 'limegreen';
-                if (!window.AbsoluteOrientationSensor) {
-                    statusEl.textContent = '高機能センサーは利用できません。';
-                    return;
-                }
+                redDot.style.backgroundColor = 'limegreen'; // デバッグ用に色変更
+                isGyroDotActive = true;
                 
-                initialQuaternion = null;
-
-                try {
-                    if (!orientationSensor) {
-                        orientationSensor = new AbsoluteOrientationSensor({ frequency: 60 });
-                        orientationSensor.addEventListener('reading', handleReading);
-                        orientationSensor.addEventListener('error', (e) => {
-                            statusEl.textContent = `センサーエラー: ${e.error.name}`;
-                        });
-                    }
-                    orientationSensor.start();
-                } catch (error) {
-                    statusEl.textContent = `センサーの初期化に失敗: ${error.name}`;
-                }
+                // deviceorientationイベントから現在の角度を直接取得して基準とする
+                const tempListener = (event) => {
+                    initialDotBeta = event.beta || 0;
+                    initialDotGamma = event.gamma || 0;
+                    window.removeEventListener('deviceorientation', tempListener);
+                };
+                window.addEventListener('deviceorientation', tempListener, { once: true });
             };
 
             const endGyro = () => {
                 redDot.style.backgroundColor = 'red';
-                if (orientationSensor) {
-                    orientationSensor.stop();
-                }
+                isGyroDotActive = false;
                 redDot.style.transform = 'translate(-50%, -50%)';
-                moveXVal.textContent = '0.0';
-                moveYVal.textContent = '0.0';
             };
 
             gyroButton.addEventListener('mousedown', startGyro);
@@ -430,7 +396,6 @@
             });
         }
 
-        // ▼▼▼ センサー許可申請の関数を復活・修正 ▼▼▼
         function requestSensorPermission() {
             return new Promise((resolve, reject) => {
                 if (typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -478,7 +443,6 @@
             try {
                 startButton.style.display = 'none';
                 
-                // ▼▼▼ 許可申請と初期化の順序を修正 ▼▼▼
                 statusEl.textContent = 'センサー許可をリクエスト中...';
                 await requestSensorPermission();
                 
@@ -496,7 +460,7 @@
 
                 setupResetButton();
                 setupSwitchButtons();
-                setupAdvancedGyroButton();
+                setupGyroButton(); // 名前はAdvancedではないが、中身は更新されている
                 setupRandomMoveButton();
 
                 animate();
