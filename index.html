@@ -87,7 +87,6 @@
             background-color: white;
             z-index: 30;
             display: none;
-            /* 内部の要素の位置決めに影響するためflex関連は削除 */
         }
         #switch-to-main-button {
             position: fixed;
@@ -99,17 +98,36 @@
             cursor: pointer;
         }
         #red-dot {
-            /* サイズを約1/3に変更 */
             width: 17px;
             height: 17px;
             background-color: red;
             border-radius: 50%;
             z-index: 31;
-            /* 位置を画面の上から40%の位置に固定 */
             position: absolute;
             top: 40%;
             left: 50%;
             transform: translate(-50%, -50%);
+            transition: transform 0.05s linear; /* 動きを滑らかに */
+        }
+        #gyro-button {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: rgba(255, 82, 82, 0.8);
+            border: 2px solid white;
+            color: white;
+            font-size: 14px;
+            line-height: 1.2;
+            z-index: 32;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        #gyro-button:active {
+            background-color: rgba(255, 82, 82, 0.4);
         }
     </style>
 </head>
@@ -135,6 +153,7 @@
     <div id="white-screen">
         <div id="red-dot"></div>
         <button id="switch-to-main-button">元の画面に戻る</button>
+        <button id="gyro-button">ジャイロ<br>固定</button>
     </div>
 
     <script>
@@ -153,10 +172,15 @@
         const whiteScreen = document.getElementById('white-screen');
         const switchToWhiteButton = document.getElementById('switch-to-white-button');
         const switchToMainButton = document.getElementById('switch-to-main-button');
+        const gyroButton = document.getElementById('gyro-button');
+        const redDot = document.getElementById('red-dot');
 
         let scene, camera, renderer, sphere, faceMesh;
         let isHoldingButton = false;
         let initialAlpha = 0, initialBeta = 0, initialGamma = 0;
+
+        let isGyroDotActive = false;
+        let initialDotBeta = 0, initialDotGamma = 0;
 
         function initThreeJS() {
             scene = new THREE.Scene();
@@ -239,26 +263,53 @@
                 initialBeta = beta;
                 initialGamma = gamma;
             }
+
+            if (isGyroDotActive) {
+                const deltaBeta = beta - initialDotBeta;
+                const deltaGamma = gamma - initialDotGamma;
+                const sensitivity = 4;
+                const moveX = -deltaGamma * sensitivity;
+                const moveY = -deltaBeta * sensitivity;
+                redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
+            }
         }
 
         function setupResetButton() {
             resetButton.addEventListener('mousedown', () => { isHoldingButton = true; });
             resetButton.addEventListener('mouseup', () => { isHoldingButton = false; sphere.rotation.set(0, 0, 0); });
-            resetButton.addEventListener('touchstart', (e) => { e.preventDefault(); resetButton.dispatchEvent(new Event('mousedown')); });
-            resetButton.addEventListener('touchend', () => { resetButton.dispatchEvent(new Event('mouseup')); });
-            resetButton.addEventListener('touchcancel', () => { resetButton.dispatchEvent(new Event('mouseup')); });
+            resetButton.addEventListener('touchstart', (e) => { e.preventDefault(); isHoldingButton = true; });
+            resetButton.addEventListener('touchend', () => { isHoldingButton = false; sphere.rotation.set(0, 0, 0); });
+            resetButton.addEventListener('touchcancel', () => { isHoldingButton = false; sphere.rotation.set(0, 0, 0); });
         }
 
         function setupSwitchButtons() {
             switchToWhiteButton.addEventListener('click', () => {
                 mainContent.style.display = 'none';
-                whiteScreen.style.display = 'block'; // flexからblockに変更
+                whiteScreen.style.display = 'block';
             });
-
             switchToMainButton.addEventListener('click', () => {
                 whiteScreen.style.display = 'none';
                 mainContent.style.display = 'block';
             });
+        }
+        
+        function setupGyroButton() {
+            const startGyro = (e) => {
+                e.preventDefault();
+                isGyroDotActive = true;
+                initialDotBeta = initialBeta;
+                initialDotGamma = initialGamma;
+            };
+            const endGyro = () => {
+                isGyroDotActive = false;
+                redDot.style.transform = 'translate(-50%, -50%)';
+            };
+            gyroButton.addEventListener('mousedown', startGyro);
+            gyroButton.addEventListener('touchstart', startGyro);
+            gyroButton.addEventListener('mouseup', endGyro);
+            gyroButton.addEventListener('touchend', endGyro);
+            gyroButton.addEventListener('mouseleave', endGyro);
+            gyroButton.addEventListener('touchcancel', endGyro);
         }
 
         function requestSensorPermission() {
@@ -321,6 +372,7 @@
 
                 setupResetButton();
                 setupSwitchButtons();
+                setupGyroButton();
                 animate();
                 processFace();
 
