@@ -107,7 +107,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            transition: top 0.3s ease, left 0.3s ease;
+            transition: background-color 0.1s, top 0.3s ease, left 0.3s ease;
         }
         #white-screen-buttons {
             position: fixed;
@@ -183,7 +183,6 @@
         const statusEl = document.getElementById('status');
         const videoElement = document.getElementById('camera-view');
         const resetButton = document.getElementById('reset-button');
-        // ▼▼▼ 古い表示用の変数を削除し、新しい表示用の変数を取得 ▼▼▼
         const moveXVal = document.getElementById('move-x-val');
         const moveYVal = document.getElementById('move-y-val');
 
@@ -201,6 +200,7 @@
 
         let scene, camera, renderer, sphere, faceMesh;
         let isHoldingButton = false;
+        let initialAlpha = 0, initialBeta = 0, initialGamma = 0;
         
         let orientationSensor = null;
         let initialQuaternion = null;
@@ -261,15 +261,52 @@
             requestAnimationFrame(processFace);
         }
         
-        // handleOrientationは現在使われていないが、将来のため残しておく
-        function handleOrientation(event) {}
+        // ▼▼▼ 3D球体の回転ロジックを復活 ▼▼▼
+        function handleOrientation(event) {
+            const beta = event.beta || 0;
+            const gamma = event.gamma || 0;
+            const alpha = event.alpha || 0;
+
+            if (isHoldingButton) {
+                const deltaAlpha = alpha - initialAlpha;
+                const deltaBeta = beta - initialBeta;
+                const deltaGamma = gamma - initialGamma;
+
+                sphere.rotation.set(
+                    THREE.MathUtils.degToRad(deltaBeta),
+                    THREE.MathUtils.degToRad(-deltaAlpha),
+                    THREE.MathUtils.degToRad(-deltaGamma),
+                    'YXZ'
+                );
+            } else {
+                initialAlpha = alpha;
+                initialBeta = beta;
+                initialGamma = gamma;
+            }
+        }
 
         function setupResetButton() {
-            resetButton.addEventListener('mousedown', () => { isHoldingButton = true; });
-            resetButton.addEventListener('mouseup', () => { isHoldingButton = false; sphere.rotation.set(0, 0, 0); });
-            resetButton.addEventListener('touchstart', (e) => { e.preventDefault(); isHoldingButton = true; });
-            resetButton.addEventListener('touchend', () => { isHoldingButton = false; sphere.rotation.set(0, 0, 0); });
-            resetButton.addEventListener('touchcancel', () => { isHoldingButton = false; sphere.rotation.set(0, 0, 0); });
+            const setInitialOrientation = () => {
+                isHoldingButton = true;
+                // 現在の向きを3D球の初期値としてキャプチャ
+                navigator.permissions.query({ name: 'accelerometer' }).then(() => {
+                    const tempListener = (event) => {
+                        initialBeta = event.beta || 0;
+                        initialGamma = event.gamma || 0;
+                        initialAlpha = event.alpha || 0;
+                        window.removeEventListener('deviceorientation', tempListener);
+                    };
+                    window.addEventListener('deviceorientation', tempListener);
+                });
+            };
+            resetButton.addEventListener('mousedown', setInitialOrientation);
+            resetButton.addEventListener('touchstart', (e) => { e.preventDefault(); setInitialOrientation(); });
+            
+            const clearHolding = () => { isHoldingButton = false; sphere.rotation.set(0, 0, 0); };
+            resetButton.addEventListener('mouseup', clearHolding);
+            resetButton.addEventListener('touchend', clearHolding);
+            resetButton.addEventListener('mouseleave', clearHolding);
+            resetButton.addEventListener('touchcancel', clearHolding);
         }
 
         function setupSwitchButtons() {
@@ -285,12 +322,11 @@
         
         function setupAdvancedGyroButton() {
             const handleReading = () => {
-                // ▼▼▼ 基準位置が未設定の場合は、最初の有効なデータで設定する ▼▼▼
+                if (!orientationSensor || !orientationSensor.quaternion) return;
+
                 if (!initialQuaternion) {
-                    if (orientationSensor.quaternion) {
-                        initialQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
-                    }
-                    return; // 基準が設定されるまで何もしない
+                    initialQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
+                    return;
                 }
                 
                 const currentQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
@@ -302,7 +338,6 @@
                 let moveX = pointerVector.x * sensitivity;
                 let moveY = -pointerVector.y * sensitivity;
 
-                // ▼▼▼ 新しい情報表示を更新 ▼▼▼
                 moveXVal.textContent = moveX.toFixed(1);
                 moveYVal.textContent = moveY.toFixed(1);
 
@@ -321,12 +356,12 @@
 
             const startGyro = (e) => {
                 e.preventDefault();
+                redDot.style.backgroundColor = 'limegreen';
                 if (!window.AbsoluteOrientationSensor) {
                     statusEl.textContent = '高機能センサーは利用できません。';
                     return;
                 }
                 
-                // 基準位置をリセットして、次の読み取りで再設定するようにする
                 initialQuaternion = null;
 
                 try {
@@ -344,11 +379,11 @@
             };
 
             const endGyro = () => {
+                redDot.style.backgroundColor = 'red';
                 if (orientationSensor) {
                     orientationSensor.stop();
                 }
                 redDot.style.transform = 'translate(-50%, -50%)';
-                // 表示をリセット
                 moveXVal.textContent = '0.0';
                 moveYVal.textContent = '0.0';
             };
@@ -395,7 +430,28 @@
             });
         }
 
-        function requestCameraPermission() {
+        // ▼▼▼ センサー許可申請の関数を復活・修正 ▼▼▼
+        function requestSensorPermission() {
+            return new Promise((resolve, reject) => {
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    DeviceOrientationEvent.requestPermission()
+                        .then(state => {
+                            if (state === 'granted') {
+                                window.addEventListener('deviceorientation', handleOrientation);
+                                resolve();
+                            } else {
+                                reject(new Error('センサー利用が許可されませんでした。'));
+                            }
+                        })
+                        .catch(err => reject(new Error('センサー許可中にエラーが発生しました。')));
+                } else {
+                    window.addEventListener('deviceorientation', handleOrientation);
+                    resolve();
+                }
+            });
+        }
+
+        function startCamera() {
             return new Promise((resolve, reject) => {
                 navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
                     .then(stream => {
@@ -422,26 +478,27 @@
             try {
                 startButton.style.display = 'none';
                 
-                // カメラと顔認識の準備
+                // ▼▼▼ 許可申請と初期化の順序を修正 ▼▼▼
+                statusEl.textContent = 'センサー許可をリクエスト中...';
+                await requestSensorPermission();
+                
                 statusEl.textContent = '顔認識モデル準備中...';
                 await initializeFaceMesh();
-                statusEl.textContent = 'カメラ準備中...';
-                await requestCameraPermission();
 
-                // 3Dシーンの準備
+                statusEl.textContent = 'カメラ準備中...';
+                await startCamera();
+
                 statusEl.textContent = '3Dシーン準備中...';
                 initThreeJS();
                 
                 statusEl.style.display = 'none';
                 mainContent.style.display = 'block';
 
-                // 各ボタンのイベントリスナーを設定
                 setupResetButton();
                 setupSwitchButtons();
                 setupAdvancedGyroButton();
                 setupRandomMoveButton();
 
-                // アニメーションループを開始
                 animate();
                 processFace();
             } catch(e) {
