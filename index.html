@@ -152,9 +152,8 @@
 </head>
 <body>
     <div id="info-overlay">
-        <p>Alpha(z):<span id="alpha-val">--</span></p>
-        <p>Beta(x):<span id="beta-val">--</span></p>
-        <p>Gamma(y):<span id="gamma-val">--</span></p>
+        <p>Move X: <span id="move-x-val">0.0</span></p>
+        <p>Move Y: <span id="move-y-val">0.0</span></p>
     </div>
 
     <div id="main-content">
@@ -184,9 +183,10 @@
         const statusEl = document.getElementById('status');
         const videoElement = document.getElementById('camera-view');
         const resetButton = document.getElementById('reset-button');
-        const alphaVal = document.getElementById('alpha-val');
-        const betaVal = document.getElementById('beta-val');
-        const gammaVal = document.getElementById('gamma-val');
+        // ▼▼▼ 古い表示用の変数を削除し、新しい表示用の変数を取得 ▼▼▼
+        const moveXVal = document.getElementById('move-x-val');
+        const moveYVal = document.getElementById('move-y-val');
+
         const canvasContainer = document.getElementById('canvas-container');
         const outputCanvas = document.getElementById('face-recognition-output');
         const outputCtx = outputCanvas.getContext('2d');
@@ -201,7 +201,6 @@
 
         let scene, camera, renderer, sphere, faceMesh;
         let isHoldingButton = false;
-        let initialAlpha = 0, initialBeta = 0, initialGamma = 0;
         
         let orientationSensor = null;
         let initialQuaternion = null;
@@ -261,33 +260,9 @@
             }
             requestAnimationFrame(processFace);
         }
-
-        function handleOrientation(event) {
-            const alpha = event.alpha || 0;
-            const beta = event.beta || 0;
-            const gamma = event.gamma || 0;
-
-            alphaVal.textContent = alpha.toFixed(1);
-            betaVal.textContent = beta.toFixed(1);
-            gammaVal.textContent = gamma.toFixed(1);
-
-            if (isHoldingButton) {
-                const deltaAlpha = alpha - initialAlpha;
-                const deltaBeta = beta - initialBeta;
-                const deltaGamma = gamma - initialGamma;
-
-                sphere.rotation.set(
-                    THREE.MathUtils.degToRad(deltaBeta),
-                    THREE.MathUtils.degToRad(-deltaAlpha),
-                    THREE.MathUtils.degToRad(-deltaGamma),
-                    'YXZ'
-                );
-            } else {
-                initialAlpha = alpha;
-                initialBeta = beta;
-                initialGamma = gamma;
-            }
-        }
+        
+        // handleOrientationは現在使われていないが、将来のため残しておく
+        function handleOrientation(event) {}
 
         function setupResetButton() {
             resetButton.addEventListener('mousedown', () => { isHoldingButton = true; });
@@ -310,7 +285,13 @@
         
         function setupAdvancedGyroButton() {
             const handleReading = () => {
-                if (!orientationSensor || !initialQuaternion) return;
+                // ▼▼▼ 基準位置が未設定の場合は、最初の有効なデータで設定する ▼▼▼
+                if (!initialQuaternion) {
+                    if (orientationSensor.quaternion) {
+                        initialQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
+                    }
+                    return; // 基準が設定されるまで何もしない
+                }
                 
                 const currentQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
                 const relativeQuaternion = initialQuaternion.clone().invert().multiply(currentQuaternion);
@@ -320,6 +301,10 @@
                 const sensitivity = 800;
                 let moveX = pointerVector.x * sensitivity;
                 let moveY = -pointerVector.y * sensitivity;
+
+                // ▼▼▼ 新しい情報表示を更新 ▼▼▼
+                moveXVal.textContent = moveX.toFixed(1);
+                moveYVal.textContent = moveY.toFixed(1);
 
                 const dotRadius = redDot.offsetWidth / 2;
                 const baseX = redDot.offsetLeft;
@@ -341,6 +326,9 @@
                     return;
                 }
                 
+                // 基準位置をリセットして、次の読み取りで再設定するようにする
+                initialQuaternion = null;
+
                 try {
                     if (!orientationSensor) {
                         orientationSensor = new AbsoluteOrientationSensor({ frequency: 60 });
@@ -349,13 +337,6 @@
                             statusEl.textContent = `センサーエラー: ${e.error.name}`;
                         });
                     }
-                    
-                    setTimeout(() => {
-                        if (orientationSensor.quaternion) {
-                           initialQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
-                        }
-                    }, 100);
-
                     orientationSensor.start();
                 } catch (error) {
                     statusEl.textContent = `センサーの初期化に失敗: ${error.name}`;
@@ -366,8 +347,10 @@
                 if (orientationSensor) {
                     orientationSensor.stop();
                 }
-                initialQuaternion = null;
                 redDot.style.transform = 'translate(-50%, -50%)';
+                // 表示をリセット
+                moveXVal.textContent = '0.0';
+                moveYVal.textContent = '0.0';
             };
 
             gyroButton.addEventListener('mousedown', startGyro);
@@ -412,30 +395,7 @@
             });
         }
 
-        // ▼▼▼ 許可申請の関数をシンプルに変更 ▼▼▼
-        function requestDeviceOrientationPermission() {
-            return new Promise((resolve, reject) => {
-                // iOS 13+
-                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    DeviceOrientationEvent.requestPermission()
-                        .then(state => {
-                            if (state === 'granted') {
-                                window.addEventListener('deviceorientation', handleOrientation);
-                                resolve();
-                            } else {
-                                reject(new Error('センサー利用が許可されませんでした。'));
-                            }
-                        })
-                        .catch(err => reject(new Error('センサー許可中にエラーが発生しました。')));
-                } else {
-                    // Androidなど、許可が不要なデバイス
-                    window.addEventListener('deviceorientation', handleOrientation);
-                    resolve();
-                }
-            });
-        }
-
-        function startCamera() {
+        function requestCameraPermission() {
             return new Promise((resolve, reject) => {
                 navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
                     .then(stream => {
@@ -457,26 +417,31 @@
                 renderer.setSize(window.innerWidth, window.innerHeight);
             }
         });
-
-        // ▼▼▼ 開始時の処理を修正 ▼▼▼
+        
         startButton.addEventListener('click', async () => {
             try {
                 startButton.style.display = 'none';
-                statusEl.textContent = 'センサー許可をリクエスト中...';
-                await requestDeviceOrientationPermission();
-
-                statusEl.textContent = '3Dシーン準備中...';
-                initThreeJS();
+                
+                // カメラと顔認識の準備
                 statusEl.textContent = '顔認識モデル準備中...';
                 await initializeFaceMesh();
                 statusEl.textContent = 'カメラ準備中...';
-                await startCamera();
+                await requestCameraPermission();
+
+                // 3Dシーンの準備
+                statusEl.textContent = '3Dシーン準備中...';
+                initThreeJS();
+                
                 statusEl.style.display = 'none';
                 mainContent.style.display = 'block';
+
+                // 各ボタンのイベントリスナーを設定
                 setupResetButton();
                 setupSwitchButtons();
                 setupAdvancedGyroButton();
                 setupRandomMoveButton();
+
+                // アニメーションループを開始
                 animate();
                 processFace();
             } catch(e) {
