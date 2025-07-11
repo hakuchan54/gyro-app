@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>【最終統合版】3D+目認識</title>
+    <title>【横向き版】3D+目認識</title>
     <script src="https://cdn.jsdelivr.net/npm/three@0.138.3/build/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
@@ -36,7 +36,7 @@
         #reset-button-container {
             position: absolute;
             top: 50%;
-            right: 5%;
+            right: 5vw; /* 画面の幅に応じて右からの位置を調整 */
             transform: translateY(-50%);
             z-index: 10;
             display: none; /* 初期状態では非表示 */
@@ -76,7 +76,6 @@
         <button id="reset-button">正面<br>リセット</button>
     </div>
     <video id="camera-view" playsinline muted></video>
-
     <button id="start-button">アプリ開始</button>
     <p id="status" style="color: white; position: fixed; bottom: 10px; left: 10px; z-index: 20;"></p>
     
@@ -112,7 +111,6 @@
             const material = new THREE.MeshStandardMaterial({ color: 0x00aaff, roughness: 0.4 });
             sphere = new THREE.Mesh(geometry, material);
             scene.add(sphere);
-
             const markGeometry = new THREE.SphereGeometry(0.1, 16, 8);
             const markMaterial = new THREE.MeshStandardMaterial({ color: 0xff0000 });
             const mark = new THREE.Mesh(markGeometry, markMaterial);
@@ -153,16 +151,32 @@
             requestAnimationFrame(processFace);
         }
 
+        // ▼▼▼ 変更点：ジャイロの軸を横向き用に調整 ▼▼▼
         function handleOrientation(event) {
-            const alpha = event.alpha || 0, beta = event.beta || 0, gamma = event.gamma || 0;
+            const alpha = event.alpha || 0; // Z軸周り（横向き時の上下方向の回転）
+            const beta = event.beta || 0;   // X軸周り（横向き時の奥行き方向の回転）
+            const gamma = event.gamma || 0; // Y軸周り（横向き時の左右方向の傾き）
+
             alphaVal.textContent = alpha.toFixed(1);
             betaVal.textContent = beta.toFixed(1);
             gammaVal.textContent = gamma.toFixed(1);
+
             if (isHoldingButton) {
-                const deltaAlpha = alpha - initialAlpha, deltaBeta = beta - initialBeta, deltaGamma = gamma - initialGamma;
-                sphere.rotation.set(THREE.MathUtils.degToRad(-deltaGamma), THREE.MathUtils.degToRad(deltaAlpha), THREE.MathUtils.degToRad(deltaBeta), 'YXZ');
+                const deltaAlpha = alpha - initialAlpha;
+                const deltaBeta = beta - initialBeta;
+                const deltaGamma = gamma - initialGamma;
+
+                // 横向きにしたときの直感的な動きに合わせる
+                sphere.rotation.set(
+                    THREE.MathUtils.degToRad(deltaBeta),  // 前後の傾きがX軸回転
+                    THREE.MathUtils.degToRad(-deltaAlpha), // 上下の回転がY軸回転（マイナスで直感的な向きに）
+                    THREE.MathUtils.degToRad(-deltaGamma), // 左右の傾きがZ軸回転
+                    'YXZ' // 回転の適用順序
+                );
             } else {
-                initialAlpha = alpha; initialBeta = beta; initialGamma = gamma;
+                initialAlpha = alpha;
+                initialBeta = beta;
+                initialGamma = gamma;
             }
         }
         
