@@ -203,7 +203,6 @@
         let isHoldingButton = false;
         let initialAlpha = 0, initialBeta = 0, initialGamma = 0;
         
-        // ▼▼▼ AbsoluteOrientationSensor用の変数を定義 ▼▼▼
         let orientationSensor = null;
         let initialQuaternion = null;
 
@@ -263,7 +262,6 @@
             requestAnimationFrame(processFace);
         }
 
-        // 3Dボールの制御は従来のdeviceorientationを使用
         function handleOrientation(event) {
             const alpha = event.alpha || 0;
             const beta = event.beta || 0;
@@ -310,27 +308,19 @@
             });
         }
         
-        // ▼▼▼ 赤点制御をAbsoluteOrientationSensorベースに刷新 ▼▼▼
         function setupAdvancedGyroButton() {
             const handleReading = () => {
                 if (!orientationSensor || !initialQuaternion) return;
                 
-                // センサーから現在の向きをクォータニオンとして取得
                 const currentQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
-                
-                // 開始時の向きからの相対的な回転を計算
                 const relativeQuaternion = initialQuaternion.clone().invert().multiply(currentQuaternion);
-
-                // 正面方向のベクトル(0, 0, -1)に相対回転を適用
                 const pointerVector = new THREE.Vector3(0, 0, -1);
                 pointerVector.applyQuaternion(relativeQuaternion);
                 
-                // 画面の水平・垂直移動量に変換
-                const sensitivity = 800; // 感度
+                const sensitivity = 800;
                 let moveX = pointerVector.x * sensitivity;
-                let moveY = -pointerVector.y * sensitivity; // Y軸は反転
+                let moveY = -pointerVector.y * sensitivity;
 
-                // 画面外に出ないようにクランプ
                 const dotRadius = redDot.offsetWidth / 2;
                 const baseX = redDot.offsetLeft;
                 const baseY = redDot.offsetTop;
@@ -360,7 +350,6 @@
                         });
                     }
                     
-                    // センサーが安定するのを少し待ってから初期位置を取得
                     setTimeout(() => {
                         if (orientationSensor.quaternion) {
                            initialQuaternion = new THREE.Quaternion().fromArray(orientationSensor.quaternion);
@@ -423,28 +412,23 @@
             });
         }
 
-        // パーミッションリクエストを統合
-        function requestAllPermissions() {
+        // ▼▼▼ 許可申請の関数をシンプルに変更 ▼▼▼
+        function requestDeviceOrientationPermission() {
             return new Promise((resolve, reject) => {
-                // 1. 従来のDeviceOrientationEventの許可
+                // iOS 13+
                 if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    DeviceOrientationEvent.requestPermission().then(orientationState => {
-                        if (orientationState === 'granted') {
-                            window.addEventListener('deviceorientation', handleOrientation);
-                            // 2. 新しいSensor APIの許可
-                            navigator.permissions.query({ name: "accelerometer" })
-                              .then(result => {
-                                if (result.state === 'denied') {
-                                  return reject(new Error('センサーの利用がブロックされています。'));
-                                }
+                    DeviceOrientationEvent.requestPermission()
+                        .then(state => {
+                            if (state === 'granted') {
+                                window.addEventListener('deviceorientation', handleOrientation);
                                 resolve();
-                              });
-                        } else {
-                            reject(new Error('DeviceOrientationの許可が得られませんでした。'));
-                        }
-                    }).catch(err => reject(err));
+                            } else {
+                                reject(new Error('センサー利用が許可されませんでした。'));
+                            }
+                        })
+                        .catch(err => reject(new Error('センサー許可中にエラーが発生しました。')));
                 } else {
-                    // パーミッションが不要な環境
+                    // Androidなど、許可が不要なデバイス
                     window.addEventListener('deviceorientation', handleOrientation);
                     resolve();
                 }
@@ -474,11 +458,13 @@
             }
         });
 
+        // ▼▼▼ 開始時の処理を修正 ▼▼▼
         startButton.addEventListener('click', async () => {
             try {
                 startButton.style.display = 'none';
                 statusEl.textContent = 'センサー許可をリクエスト中...';
-                await requestAllPermissions();
+                await requestDeviceOrientationPermission();
+
                 statusEl.textContent = '3Dシーン準備中...';
                 initThreeJS();
                 statusEl.textContent = '顔認識モデル準備中...';
