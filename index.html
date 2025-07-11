@@ -200,7 +200,9 @@
         let initialAlpha = 0, initialBeta = 0, initialGamma = 0;
         
         let isGyroDotActive = false;
-        let initialDotAlpha = 0;
+        // ▼▼▼ 傾き(beta)の初期値も保存するように変更 ▼▼▼
+        let initialDotAlpha = 0, initialDotBeta = 0;
+
 
         function initThreeJS() {
             scene = new THREE.Scene();
@@ -263,7 +265,6 @@
             const gamma = event.gamma || 0;
             const alpha = event.alpha || 0;
 
-            // 3D球体の「傾き」制御
             if (isHoldingButton) {
                 const deltaAlpha = alpha - initialAlpha;
                 const deltaBeta = beta - initialBeta;
@@ -280,27 +281,32 @@
                 initialGamma = gamma;
             }
 
-            // 赤い点の「回転」制御
             if (isGyroDotActive) {
+                // 水平方向の計算（回転）
                 let deltaAlpha = alpha - initialDotAlpha;
+                if (deltaAlpha > 180) deltaAlpha -= 360;
+                else if (deltaAlpha < -180) deltaAlpha += 360;
+
+                // 垂直方向の計算（傾き）
+                let deltaBeta = beta - initialDotBeta;
+
+                const sensitivityAlpha = 5; // 水平方向の感度
+                const sensitivityBeta = 10; // 垂直方向の感度
                 
-                // 0°と360°の境界をまたいだ際のジャンプを補正
-                if (deltaAlpha > 180) {
-                    deltaAlpha -= 360;
-                } else if (deltaAlpha < -180) {
-                    deltaAlpha += 360;
-                }
-                
-                const sensitivity = 5;
-                let moveX = -deltaAlpha * sensitivity; // alphaの回転と逆方向に動かす
-                let moveY = 0; // 縦移動は無し
+                // ▼▼▼ 左右反転を修正し、上下移動を追加 ▼▼▼
+                let moveX = deltaAlpha * sensitivityAlpha; 
+                let moveY = -deltaBeta * sensitivityBeta; // 前に倒すと点が上に動く
 
                 // 画面外に出ないようにクランプ
                 const dotRadius = redDot.offsetWidth / 2;
                 const baseX = redDot.offsetLeft;
+                const baseY = redDot.offsetTop;
                 const minMoveX = dotRadius - baseX;
                 const maxMoveX = window.innerWidth - dotRadius - baseX;
+                const minMoveY = dotRadius - baseY;
+                const maxMoveY = window.innerHeight - dotRadius - baseY;
                 moveX = Math.max(minMoveX, Math.min(maxMoveX, moveX));
+                moveY = Math.max(minMoveY, Math.min(maxMoveY, moveY));
 
                 redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
             }
@@ -333,9 +339,10 @@
                 redDot.style.backgroundColor = 'limegreen';
                 isGyroDotActive = true;
                 
-                // 現在の方角を基準点として保存
+                // ▼▼▼ 現在の方角(alpha)と傾き(beta)を基準点として保存 ▼▼▼
                 const tempListener = (event) => {
                     initialDotAlpha = event.alpha || 0;
+                    initialDotBeta = event.beta || 0;
                     window.removeEventListener('deviceorientation', tempListener);
                 };
                 window.addEventListener('deviceorientation', tempListener, { once: true });
