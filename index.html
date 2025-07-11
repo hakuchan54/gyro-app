@@ -28,11 +28,12 @@
             border-radius: 8px;
             transform: scaleX(-1);
         }
+        /* ▼▼▼ info-overlayは常に表示されるように変更 ▼▼▼ */
         #info-overlay {
-            position: absolute;
+            position: fixed; /* absoluteからfixedに変更 */
             top: 10px;
             right: 10px;
-            z-index: 2;
+            z-index: 35; /* 他の要素より手前に来るように調整 */
             padding: 10px;
             color: white;
             background: rgba(0,0,0,0.5);
@@ -107,7 +108,7 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            transition: background-color 0.1s, top 0.3s ease, left 0.3s ease;
+            transition: top 0.3s ease, left 0.3s ease;
         }
         #white-screen-buttons {
             position: fixed;
@@ -152,18 +153,15 @@
     </style>
 </head>
 <body>
+    <div id="info-overlay">
+        <p>Alpha(z):<span id="alpha-val">--</span></p>
+        <p>Beta(x):<span id="beta-val">--</span></p>
+        <p>Gamma(y):<span id="gamma-val">--</span></p>
+    </div>
+
     <div id="main-content">
         <div id="canvas-container"></div>
         <canvas id="face-recognition-output"></canvas>
-        <div id="info-overlay">
-            <p>Alpha(z):<span id="alpha-val">--</span></p>
-            <p>Beta(x):<span id="beta-val">--</span></p>
-            <p>Gamma(y):<span id="gamma-val">--</span></p>
-            <hr>
-            <p>Gyro(x):<span id="gyro-x-val">--</span></p>
-            <p>Gyro(y):<span id="gyro-y-val">--</span></p>
-            <p>dt:<span id="dt-val">--</span></p>
-        </div>
         <div id="reset-button-container">
             <button id="reset-button">正面<br>リセット</button>
         </div>
@@ -195,12 +193,6 @@
         const outputCanvas = document.getElementById('face-recognition-output');
         const outputCtx = outputCanvas.getContext('2d');
 
-        // ▼▼▼ デバッグ表示用の要素を取得 ▼▼▼
-        const gyroXVal = document.getElementById('gyro-x-val');
-        const gyroYVal = document.getElementById('gyro-y-val');
-        const dtVal = document.getElementById('dt-val');
-
-
         const mainContent = document.getElementById('main-content');
         const whiteScreen = document.getElementById('white-screen');
         const switchToWhiteButton = document.getElementById('switch-to-white-button');
@@ -213,9 +205,9 @@
         let isHoldingButton = false;
         let initialAlpha = 0, initialBeta = 0, initialGamma = 0;
 
-        let gyroscope = null;
-        let totalAngleX = 0, totalAngleY = 0;
-        let lastTimestamp = 0;
+        // ▼▼▼ Gyroscope APIの変数を削除し、シンプルなフラグに戻す ▼▼▼
+        let isGyroDotActive = false; 
+        let initialDotBeta = 0, initialDotGamma = 0;
 
         function initThreeJS() {
             scene = new THREE.Scene();
@@ -298,6 +290,33 @@
                 initialBeta = beta;
                 initialGamma = gamma;
             }
+
+            // ▼▼▼ 赤点制御のロジックをここに再実装 ▼▼▼
+            if (isGyroDotActive) {
+                const deltaBeta = beta - initialDotBeta;
+                const deltaGamma = gamma - initialDotGamma;
+                
+                const sensitivity = 10; // 角度(degree)に合わせた感度
+                
+                // 横向き画面での軸のマッピングを再確認
+                // 左右の傾き(gamma)でX軸（水平）方向の移動
+                // 前後の傾き(beta)でY軸（垂直）方向の移動
+                let moveX = deltaGamma * sensitivity;
+                let moveY = deltaBeta * sensitivity;
+
+                // 画面外に出ないようにクランプ
+                const dotRadius = redDot.offsetWidth / 2;
+                const baseX = redDot.offsetLeft;
+                const baseY = redDot.offsetTop;
+                const minMoveX = dotRadius - baseX;
+                const maxMoveX = window.innerWidth - dotRadius - baseX;
+                const minMoveY = dotRadius - baseY;
+                const maxMoveY = window.innerHeight - dotRadius - baseY;
+                moveX = Math.max(minMoveX, Math.min(maxMoveX, moveX));
+                moveY = Math.max(minMoveY, Math.min(maxMoveY, moveY));
+
+                redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
+            }
         }
 
         function setupResetButton() {
@@ -319,87 +338,18 @@
             });
         }
         
-        function setupAdvancedGyroButton() {
-            const handleGyroReading = () => {
-                if (!gyroscope || !gyroscope.timestamp) return;
-
-                if (lastTimestamp === 0) {
-                    lastTimestamp = gyroscope.timestamp;
-                    return;
-                }
-
-                const dt = (gyroscope.timestamp - lastTimestamp) / 1000;
-                lastTimestamp = gyroscope.timestamp;
-
-                const wx = gyroscope.x || 0;
-                const wy = gyroscope.y || 0;
-                
-                // ▼▼▼ デバッグ表示を更新 ▼▼▼
-                gyroXVal.textContent = wx.toFixed(3);
-                gyroYVal.textContent = wy.toFixed(3);
-                dtVal.textContent = dt.toFixed(4);
-
-                totalAngleX += wx * dt;
-                totalAngleY += wy * dt;
-
-                const sensitivity = 3000;
-                let moveX = totalAngleY * sensitivity;
-                let moveY = -totalAngleX * sensitivity;
-
-                const dotRadius = redDot.offsetWidth / 2;
-                const baseX = redDot.offsetLeft;
-                const baseY = redDot.offsetTop;
-                
-                const minMoveX = dotRadius - baseX;
-                const maxMoveX = window.innerWidth - dotRadius - baseX;
-                const minMoveY = dotRadius - baseY;
-                const maxMoveY = window.innerHeight - dotRadius - baseY;
-
-                moveX = Math.max(minMoveX, Math.min(maxMoveX, moveX));
-                moveY = Math.max(minMoveY, Math.min(maxMoveY, moveY));
-                
-                redDot.style.transform = `translate(-50%, -50%) translate(${moveX}px, ${moveY}px)`;
-            };
-
+        // ▼▼▼ ジャイロボタンの処理をdeviceorientationベースに戻す ▼▼▼
+        function setupGyroButton() {
             const startGyro = (e) => {
                 e.preventDefault();
-                redDot.style.backgroundColor = 'limegreen';
-
-                if (!window.Gyroscope) {
-                    statusEl.textContent = '高精度ジャイロは利用できません。';
-                    return;
-                }
-
-                try {
-                    if (!gyroscope) {
-                        gyroscope = new Gyroscope({ frequency: 60 });
-                        gyroscope.addEventListener('reading', handleGyroReading);
-                        gyroscope.addEventListener('error', event => {
-                            console.error('Gyroscope error:', event.error);
-                            if (event.error.name === 'NotAllowedError') {
-                                statusEl.textContent = 'ジャイロセンサーの許可が必要です。';
-                            } else {
-                                statusEl.textContent = `ジャイロエラー: ${event.error.name}`;
-                            }
-                        });
-                    }
-                    
-                    totalAngleX = 0;
-                    totalAngleY = 0;
-                    lastTimestamp = 0; 
-                    
-                    gyroscope.start();
-                } catch (error) {
-                    console.error('Gyroscope could not be constructed.', error);
-                    statusEl.textContent = '高精度ジャイロの初期化に失敗しました。';
-                }
+                isGyroDotActive = true;
+                // 現在の角度を初期値として保存
+                initialDotBeta = initialBeta;
+                initialDotGamma = initialGamma;
             };
 
             const endGyro = () => {
-                redDot.style.backgroundColor = 'red';
-                if (gyroscope) {
-                    gyroscope.stop();
-                }
+                isGyroDotActive = false;
                 redDot.style.transform = 'translate(-50%, -50%)';
             };
 
@@ -501,7 +451,7 @@
                 mainContent.style.display = 'block';
                 setupResetButton();
                 setupSwitchButtons();
-                setupAdvancedGyroButton();
+                setupGyroButton(); // setupAdvancedGyroButton から元に戻す
                 setupRandomMoveButton();
                 animate();
                 processFace();
